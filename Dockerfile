@@ -1,4 +1,4 @@
-FROM python:3.13-slim AS build
+FROM python:3.14-slim AS build
 
 COPY --from=ghcr.io/astral-sh/uv:0.11 /uv /usr/local/bin/uv
 
@@ -20,7 +20,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --locked --no-dev --no-editable
 
 
-FROM python:3.13-slim
+FROM python:3.14-slim
 
 COPY --from=build /app/.venv /app/.venv
 
