@@ -1,0 +1,99 @@
+# dnspatch + Redis + a Telegram bot that reports dnspatch's status changes.
+#
+# This one file is all you need:
+#
+#   curl -LO https://raw.githubusercontent.com/dnspatch/dnspatch-telegram-bot/main/compose.yaml
+#   curl -L  https://raw.githubusercontent.com/dnspatch/dnspatch-telegram-bot/main/.env.example -o .env
+#   # edit .env, and the dnspatch config below if your provider is not regru
+#   docker compose up -d
+#
+# dnspatch publishes a small JSON event to the Redis channel
+# dnspatch.events.<instance> whenever an instance flips between success and
+# failure; the bot subscribes to it and forwards the events to Telegram.
+
+services:
+  dnspatch:
+    # The notifiers are compiled into the -full image only.
+    image: ghcr.io/dnspatch/dnspatch:${DNSPATCH_VERSION:-latest}-full
+    restart: unless-stopped
+    environment:
+      PASSWORD: ${PASSWORD:?set PASSWORD in .env}
+      REDIS_URL: redis://redis:6379/0
+    configs:
+      - source: dnspatch
+        target: /etc/dnspatch/config.toml
+    depends_on:
+      redis:
+        condition: service_healthy
+    logging: &logging
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    tmpfs:
+      - /tmp # the image's HEALTHCHECK writes its status files here
+    # No read_only here, unlike dnspatch's own compose.yml: Compose writes an
+    # inline config (see "configs" below) into the container's filesystem and
+    # refuses to do it into a read-only one.
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+
+  redis:
+    image: redis:8-alpine
+    restart: unless-stopped
+    # Nothing is exposed to the host: only the two services below reach it.
+    # The volume keeps what /status shows across restarts.
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: [CMD, redis-cli, ping]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    logging: *logging
+
+  bot:
+    image: ghcr.io/dnspatch/dnspatch-telegram-bot:${BOT_VERSION:-latest}
+    restart: unless-stopped
+    environment:
+      TELEGRAM_TOKEN: ${TELEGRAM_TOKEN:?set TELEGRAM_TOKEN in .env}
+      TELEGRAM_CHAT_IDS: ${TELEGRAM_CHAT_IDS:-}
+      REDIS_URL: redis://redis:6379/0
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    depends_on:
+      redis:
+        condition: service_healthy
+    logging: *logging
+    read_only: true
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+
+volumes:
+  redis-data:
+
+# The dnspatch config lives here so that the compose file is the only thing to
+# download. "$$" keeps compose from substituting ${...}: dnspatch reads them
+# from the container's environment itself. Replace the provider with yours:
+# https://dnspatch.github.io/dnspatch/
+configs:
+  dnspatch:
+    content: |
+      [notify.alerts]
+      type    = "redis"
+      address = "$${REDIS_URL}"
+
+      [[instance]]
+      name   = "home"
+      notify = ["alerts"]
+
+      [[instance.retriever]]
+      type = "ifconfigco"
+
+      [[instance.provider]]
+      type     = "regru"
+      zone     = "example.com"
+      rr_name  = "home"
+      username = "CHANGE_ME"
+      password = "$${PASSWORD}"
