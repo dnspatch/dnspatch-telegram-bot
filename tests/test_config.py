@@ -9,6 +9,24 @@ def test_defaults_and_chat_ids() -> None:
     assert settings.chat_ids == {1, -2, 3}
     assert settings.redis_url == "redis://redis:6379/0"
     assert settings.topic_prefix == "dnspatch.events."
+    assert settings.events == {
+        "status",
+        "provider_status",
+        "retriever_status",
+        "ip_change",
+        "lifecycle",
+    }
+
+
+def test_events_choose_what_goes_to_the_chat() -> None:
+    settings = Settings.from_env({"TELEGRAM_TOKEN": "t", "EVENTS": "status, cycle"})
+
+    assert settings.events == {"status", "cycle"}
+
+
+def test_unknown_event_is_reported_with_the_valid_ones() -> None:
+    with pytest.raises(ConfigError, match=r"unknown nope; valid are status,"):
+        Settings.from_env({"TELEGRAM_TOKEN": "t", "EVENTS": "status,nope"})
 
 
 def test_overrides() -> None:
