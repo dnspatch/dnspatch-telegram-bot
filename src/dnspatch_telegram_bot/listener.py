@@ -1,4 +1,4 @@
-"""Subscribes to the dnspatch channels and hands events to the chat."""
+"""Subscribes to the dnspatch channels and hands events to the chats."""
 
 import asyncio
 import logging
@@ -8,12 +8,11 @@ from pydantic import ValidationError
 from redis.asyncio import Redis
 from redis.exceptions import RedisError
 
-from dnspatch_telegram_bot.events import KINDS, Event, parse_event, render
+from dnspatch_telegram_bot.events import parse_event, render
+from dnspatch_telegram_bot.storage.events import remember
 
 log = logging.getLogger(__name__)
 
-# One field per event.key; the first version kept its statuses in ...:status.
-EVENTS_KEY = "dnspatch-telegram-bot:events"
 RECONNECT_DELAY = 5.0
 
 type Send = Callable[[str], Awaitable[None]]
@@ -32,18 +31,9 @@ async def handle_payload(
         log.warning("ignoring a message that is not a dnspatch event: %r", payload)
         return
 
-    await redis.hset(EVENTS_KEY, event.key, event.model_dump_json())
+    await remember(redis, event)
     if event.event in forward:
         await send(render(event))
-
-
-async def last_events(redis: Redis) -> list[Event]:
-    """Return the latest event of every kind, per instance, provider and retriever."""
-    raw = await redis.hgetall(EVENTS_KEY)
-    return sorted(
-        (parse_event(value) for value in raw.values()),
-        key=lambda e: (e.instance, KINDS.index(e.event), e.key),
-    )
 
 
 async def listen(redis: Redis, send: Send, prefix: str, forward: frozenset[str]) -> None:
