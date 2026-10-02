@@ -1,0 +1,27 @@
+# Config of dnspatch for compose.yaml. Save it as dnspatch.toml next to
+# compose.yaml, and replace the provider with yours:
+# https://dnspatch.github.io/dnspatch/
+#
+# ${...} is read by dnspatch from the container's environment, which compose
+# fills from .env.
+
+[notify.alerts]
+type    = "redis"
+address = "${REDIS_URL}"
+# Everything is published; the bot decides what reaches the chat and keeps the
+# rest for /status.
+events  = ["status", "provider_status", "retriever_status", "ip_change", "cycle", "lifecycle"]
+
+[[instance]]
+name   = "home"
+notify = ["alerts"]
+
+[[instance.retriever]]
+type = "ifconfigco"
+
+[[instance.provider]]
+type     = "regru"
+zone     = "example.com"
+rr_name  = "home"
+username = "CHANGE_ME"
+password = "${PASSWORD}"
